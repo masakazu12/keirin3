@@ -1,0 +1,6 @@
+{
+  "name": "競輪AI予想システム (Keirin AI)",
+  "description": "過去の出走表・オッズ・結果から機械学習とHarville近似で1着・組合せ確率と期待値を推定し、回収率を最大化する買い目・見送り判定を行うWindows型競輪分析システム",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

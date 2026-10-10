@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>競輪AI予想システム (Keirin AI)</title>
+    <meta name="description" content="過去の出走表・オッズ・結果から機械学習とHarville近似で1着・組合せ確率と期待値を推定し、回収率を最大化する買い目・見送り判定を行うWindows型競輪分析システム" />
+    <meta property="og:title" content="競輪AI予想システム (Keirin AI)" />
+    <meta property="og:description" content="過去の出走表・オッズ・結果から機械学習とHarville近似で1着・組合せ確率と期待値を推定し、回収率を最大化する買い目・見送り判定を行うWindows型競輪分析システム" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // Intercept and suppress external browser extension errors (e.g. MetaMask inpage.js in sandboxed iframe)
+      window.addEventListener('error', function(event) {
+        var source = (event && event.filename) || '';
+        var msg = (event && event.message) || '';
+        if (
+          source.indexOf('chrome-extension://') !== -1 ||
+          msg.indexOf('MetaMask') !== -1 ||
+          msg.indexOf('ethereum') !== -1
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          return true;
+        }
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = event && event.reason;
+        var reasonText = (reason && (reason.message || reason.stack || String(reason))) || '';
+        if (
+          reasonText.indexOf('chrome-extension://') !== -1 ||
+          reasonText.indexOf('MetaMask') !== -1 ||
+          reasonText.indexOf('ethereum') !== -1
+        ) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        }
+      }, true);
+    </script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased font-sans select-none min-h-screen overflow-y-auto">
+    <div id="root" class="min-h-screen flex flex-col"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
