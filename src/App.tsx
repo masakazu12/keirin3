@@ -23,6 +23,7 @@ import { StrategyGridView } from './components/StrategyGridView';
 import { DataManagementView } from './components/DataManagementView';
 import { DataIngestionView } from './components/DataIngestionView';
 import { PythonExporterView } from './components/PythonExporterView';
+import { PredictionResultsView } from './components/PredictionResultsView';
 import { ComplianceModal } from './components/ComplianceModal';
 
 import {
@@ -36,7 +37,10 @@ import {
   CheckCircle2,
   Layers,
   ShieldCheck,
+  Globe,
+  Award,
 } from 'lucide-react';
+import { executeOfficialAutoSync } from './services/officialFetcher';
 
 export default function App() {
   // Application State
@@ -52,7 +56,7 @@ export default function App() {
   });
 
   const [activeTab, setActiveTab] = useState<
-    'live' | 'predict' | 'training' | 'grid' | 'data' | 'ingest' | 'python'
+    'live' | 'predict' | 'results' | 'training' | 'grid' | 'data' | 'ingest' | 'python'
   >('live');
   const [selectedRaceId, setSelectedRaceId] = useState<string>('');
   const [isTraining, setIsTraining] = useState<boolean>(false);
@@ -137,6 +141,25 @@ export default function App() {
       );
     }, 200);
   };
+
+  // Handle global official sync trigger
+  const handleGlobalOfficialSync = useCallback(async () => {
+    showToast('公式サイト (KEIRIN.JP / netkeirin) から本日の全データを自動取得中...');
+    try {
+      const res = await executeOfficialAutoSync('2026-10-10', 'all');
+      setRaces((prev) => {
+        const map = new Map<string, RaceGroup>();
+        prev.forEach((r) => map.set(r.race_id, r));
+        res.races.forEach((r) => map.set(r.race_id, r));
+        return Array.from(map.values());
+      });
+      showToast(
+        `公式サイトからの必要データ自動取得が完了しました (${res.summary.venueCount}会場・全${res.summary.totalRaces}レース、出走選手${res.summary.totalEntries}名、オッズ${res.summary.totalOdds.toLocaleString()}件、確定結果${res.summary.finishedRaces}レース同期済)`
+      );
+    } catch (err: any) {
+      showToast(`公式サイト自動取得エラー: ${err?.message || '通信失敗'}`);
+    }
+  }, [showToast]);
 
   // Handle new dataset loaded from CSV or HTML or Synthetic
   const handleDataLoaded = (newRaces: RaceGroup[]) => {
@@ -228,12 +251,13 @@ export default function App() {
   };
 
   const navItems = [
-    { id: 'live', label: '開催中自動取得', icon: Radio, sub: '直前オッズ・締切' },
+    { id: 'live', label: '開催中レース', icon: Radio, sub: '直前オッズ・締切' },
     { id: 'predict', label: 'レース予想', icon: Compass, sub: 'predict.py' },
+    { id: 'results', label: '的中判定・収支分析', icon: Award, sub: '開催地別回収率・損益' },
     { id: 'training', label: '学習・バックテスト', icon: Cpu, sub: 'train_backtest.py' },
     { id: 'grid', label: '戦略グリッド探索', icon: SlidersHorizontal, sub: 'grid_validation.csv' },
     { id: 'data', label: '出走表・データ管理', icon: TableProperties, sub: 'entries/odds' },
-    { id: 'ingest', label: 'データ取込・HTML', icon: Database, sub: 'collect & Phase 1' },
+    { id: 'ingest', label: '公式サイトデータ取込', icon: Globe, sub: '出走表・オッズ・結果' },
     { id: 'python', label: 'Python CLIコード', icon: FileCode2, sub: 'スクリプト出力' },
   ];
 
@@ -360,6 +384,24 @@ export default function App() {
                     initialRaceId={selectedRaceId}
                   />
                 )}
+                {activeTab === 'results' && (
+                  <PredictionResultsView
+                    races={races}
+                    model={model}
+                    activeStrategy={activeStrategy}
+                    onUpdateStrategy={(newStrat) => {
+                      setActiveStrategy(newStrat);
+                      showToast(
+                        `戦略パラメータを更新: ${newStrat.bet_type.toUpperCase()} (EV ≧ ${newStrat.ev_threshold})`
+                      );
+                    }}
+                    onSelectRaceForDetail={(raceId) => {
+                      setSelectedRaceId(raceId);
+                      setActiveTab('predict');
+                      showToast(`レース [${raceId}] を詳細予想ワークスペースに展開しました。`);
+                    }}
+                  />
+                )}
                 {activeTab === 'training' && (
                   <TrainingView
                     races={races}
@@ -389,6 +431,7 @@ export default function App() {
                       setActiveTab('predict');
                       showToast(`レース [${raceId}] を詳細予想ワークスペースに展開しました。`);
                     }}
+                    onSyncOfficial={handleGlobalOfficialSync}
                   />
                 )}
                 {activeTab === 'ingest' && (

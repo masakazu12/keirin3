@@ -22,6 +22,10 @@ import {
   ListFilter,
   DollarSign,
   TrendingUp,
+  Globe,
+  RotateCw,
+  Clock,
+  MapPin,
 } from 'lucide-react';
 
 interface DataManagementViewProps {
@@ -29,6 +33,7 @@ interface DataManagementViewProps {
   selectedRaceId?: string;
   onSelectRace?: (raceId: string) => void;
   onSelectForPrediction?: (raceId: string) => void;
+  onSyncOfficial?: () => Promise<void> | void;
 }
 
 export const DataManagementView: React.FC<DataManagementViewProps> = ({
@@ -36,6 +41,7 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
   selectedRaceId: externalSelectedRaceId,
   onSelectRace,
   onSelectForPrediction,
+  onSyncOfficial,
 }) => {
   // View mode: 'race-linked' (default) or 'raw-all'
   const [viewMode, setViewMode] = useState<'race-linked' | 'raw-all'>('race-linked');
@@ -179,6 +185,16 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 ml-1">
+              {onSyncOfficial && (
+                <button
+                  onClick={onSyncOfficial}
+                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1.5 border border-emerald-500/80 transition-colors shadow-sm"
+                  title="JKA公式サイト (KEIRIN.JP / netkeirin) から本日の全データを自動取得"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>公式サイト自動取得</span>
+                </button>
+              )}
               <button
                 onClick={handleDownloadEntries}
                 className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 text-slate-200 rounded text-xs flex items-center gap-1.5 border border-slate-800 transition-colors"

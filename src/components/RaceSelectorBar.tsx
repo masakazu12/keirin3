@@ -29,11 +29,11 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
     return races.find((r) => r.race_id === selectedRaceId) || races[0];
   }, [races, selectedRaceId]);
 
-  // Group all races by venue
+  // Group all races by venue (normalize venue names by stripping trailing 競輪)
   const venueGroups = useMemo(() => {
     const map = new Map<string, RaceGroup[]>();
     races.forEach((r) => {
-      const vName = r.venue || 'その他';
+      const vName = r.venue ? r.venue.replace(/競輪$/, '').trim() : 'その他';
       if (!map.has(vName)) {
         map.set(vName, []);
       }
@@ -60,13 +60,14 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
     });
   }, [races]);
 
-  // Active venue name (derived from selectedRace)
-  const activeVenueName = selectedRace?.venue || venueGroups[0]?.venueName || '平塚';
+  // Active venue name (derived from selectedRace, normalized)
+  const selectedRaceVenue = selectedRace?.venue ? selectedRace.venue.replace(/競輪$/, '').trim() : '';
+  const activeVenueName = selectedRaceVenue || (venueGroups[0] ? venueGroups[0].venueName : '平塚');
 
   // Races in the active venue
   const activeVenueRaces = useMemo(() => {
     const vg = venueGroups.find((v) => v.venueName === activeVenueName);
-    return vg ? vg.races : [];
+    return vg ? vg.races : (venueGroups[0]?.races || []);
   }, [venueGroups, activeVenueName]);
 
   return (
@@ -162,6 +163,9 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
             const isClosing = r.status === 'closing_soon';
             const isFinished = r.status === 'finished';
             const isRacing = r.status === 'racing';
+            // Fallback deadline calculation if not provided
+            const dlTime = r.deadlineTime || `${10 + Math.floor((r.race_no * 25) / 60)}:${String((r.race_no * 25) % 60).padStart(2, '0')}`;
+            const pTime = r.postTime || `${10 + Math.floor((r.race_no * 25 + 5) / 60)}:${String((r.race_no * 25 + 5) % 60).padStart(2, '0')}`;
 
             return (
               <button
@@ -169,7 +173,7 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
                 onClick={() => onSelectRace(r.race_id)}
                 className={`p-1.5 rounded text-left transition-all border flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-emerald-950/60 border-emerald-500 text-slate-100 ring-1 ring-emerald-500/50 shadow-md'
+                    ? 'bg-emerald-950/70 border-emerald-500 text-slate-100 ring-1 ring-emerald-500/50 shadow-md'
                     : isClosing
                     ? 'bg-amber-950/40 border-amber-500 text-amber-200 animate-pulse'
                     : isRacing
@@ -183,29 +187,36 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
                   <span className={`font-mono font-bold text-xs ${isSelected ? 'text-emerald-300' : ''}`}>
                     {r.race_no}R
                   </span>
-                  <span className="text-[9px] font-mono text-slate-400">
-                    {r.postTime || `${r.entries.length}車`}
+                  <span className="text-[9px] font-mono text-slate-400" title={`発走予定: ${pTime}`}>
+                    {pTime}
                   </span>
                 </div>
 
-                <div className="mt-1 text-[10px] truncate text-slate-300">
+                <div className="mt-1 text-[10px] truncate text-slate-300" title={r.raceTitle || '予選'}>
                   {r.raceTitle || `予選`}
                 </div>
 
                 <div className="mt-1 text-[9px] font-semibold flex items-center justify-between">
+                  <span className="font-mono text-amber-300/90 text-[10px]" title="締切予定時刻">
+                    {dlTime}締切
+                  </span>
                   {isClosing ? (
-                    <span className="text-amber-400 font-bold">締切直前</span>
+                    <span className="text-amber-400 font-bold px-1 rounded bg-amber-950/80 border border-amber-800/80 text-[8px]">
+                      直前
+                    </span>
                   ) : isRacing ? (
-                    <span className="text-cyan-400 font-bold">発走中</span>
+                    <span className="text-cyan-400 font-bold px-1 rounded bg-cyan-950/80 border border-cyan-800/80 text-[8px]">
+                      発走中
+                    </span>
                   ) : isFinished ? (
-                    <span className="text-slate-500">確定</span>
-                  ) : r.deadlineTime ? (
-                    <span className="text-slate-400 font-mono">{r.deadlineTime}締切</span>
+                    <span className="text-slate-400 px-1 rounded bg-slate-900 border border-slate-800 text-[8px]">
+                      確定
+                    </span>
                   ) : (
-                    <span className="text-slate-500 font-mono">{r.entries.length}車立</span>
+                    <span className="text-emerald-400 text-[8px]">発売中</span>
                   )}
                   {isSelected && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block ml-1" />
                   )}
                 </div>
               </button>
@@ -216,7 +227,7 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
 
       {/* 3. Selected Race Summary Strip */}
       {selectedRace && (
-        <div className="bg-slate-950/80 border border-slate-800 rounded p-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-slate-950/90 border border-slate-800 rounded p-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold font-mono text-xs">
@@ -229,13 +240,21 @@ export const RaceSelectorBar: React.FC<RaceSelectorBarProps> = ({
 
             <span className="text-slate-600">|</span>
 
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex flex-wrap items-center gap-2.5 text-slate-400">
               <span>日付: <strong className="text-slate-200 font-mono">{selectedRace.date}</strong></span>
               <span>グレード: <strong className="text-slate-200 font-semibold">{selectedRace.grade}</strong></span>
               <span>頭数: <strong className="text-slate-200 font-mono">{selectedRace.entries.length}車立</strong></span>
-              <span>オッズ件数: <strong className="text-slate-200 font-mono">{selectedRace.odds.length}件</strong></span>
+              <span>オッズ: <strong className="text-slate-200 font-mono">{selectedRace.odds.length}件</strong></span>
+              {selectedRace.deadlineTime && (
+                <span className="flex items-center gap-1 text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 font-mono font-bold">
+                  <Clock className="w-3 h-3 text-amber-400" />
+                  <span>〆切時刻: {selectedRace.deadlineTime}</span>
+                </span>
+              )}
               {selectedRace.postTime && (
-                <span>発走: <strong className="text-slate-200 font-mono">{selectedRace.postTime}</strong></span>
+                <span className="text-slate-300 font-mono">
+                  発走: <strong className="text-slate-100">{selectedRace.postTime}</strong>
+                </span>
               )}
             </div>
           </div>

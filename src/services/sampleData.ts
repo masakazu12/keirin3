@@ -6,6 +6,7 @@
 
 import { BetType, Entry, KeirinGrade, OddsItem, RaceGroup, RiderStyle } from '../types/keirin';
 import { computeAllCombinations } from './harville';
+import { buildRealisticRaceResult } from './liveCollector';
 
 const VENUES = [
   '平塚',
@@ -296,6 +297,26 @@ export function generateSampleDataset(
       }
     );
 
+    const result = buildRealisticRaceResult(raceId, entries, oddsList, '晴 / 気温 20℃ / 風速 1.0m');
+
+    const baseHour = r % 3 === 0 ? 15 : r % 4 === 0 ? 20 : 10;
+    const timeSlot = baseHour === 15 ? 'ナイター' : baseHour === 20 ? 'ミッドナイト' : 'デイ';
+    const minuteOffset = (raceNo - 1) * 25 + 15;
+    const postH = baseHour + Math.floor(minuteOffset / 60);
+    const postM = minuteOffset % 60;
+    const postTime = `${String(postH).padStart(2, '0')}:${String(postM).padStart(2, '0')}`;
+    const deadM = (postM - 5 + 60) % 60;
+    const deadH = postM < 5 ? postH - 1 : postH;
+    const deadlineTime = `${String(deadH).padStart(2, '0')}:${String(deadM).padStart(2, '0')}`;
+    const raceTitle =
+      raceNo === 12
+        ? `${grade} 決勝`
+        : raceNo >= 10
+        ? `${grade} 準決勝`
+        : raceNo >= 7
+        ? 'S級 特選'
+        : 'A級 予選';
+
     races.push({
       race_id: raceId,
       date: dateStr,
@@ -304,6 +325,12 @@ export function generateSampleDataset(
       race_no: raceNo,
       entries,
       odds: oddsList,
+      status: 'finished',
+      postTime,
+      deadlineTime,
+      raceTitle,
+      timeSlot,
+      result,
     });
   }
 

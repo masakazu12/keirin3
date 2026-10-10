@@ -60,13 +60,13 @@ export interface AutoFetchConfig {
 }
 
 export const DEFAULT_CONFIG: AutoFetchConfig = {
-  enabled: true,
+  enabled: false, // データーを自動取得しない (手動取得モード)
   intervalSeconds: 30,
   selectedVenueCode: 'all',
   respectRobotsTxt: true,
   complianceDelaySeconds: 3.0,
   userAgent: 'KeirinAIResearchBot/0.1 (+https://github.com/user/keirin-ai; contact: m.shirakawa1204@gmail.com)',
-  autoFetchResults: true,
+  autoFetchResults: false,
 };
 
 export const ACTIVE_VENUES: LiveVenue[] = [
@@ -79,6 +79,36 @@ export const ACTIVE_VENUES: LiveVenue[] = [
     bankLength: '400m',
     weather: '晴 / 気温 22℃ / 風速 1.2m',
     totalRaces: 12,
+  },
+  {
+    id: 'yahiko',
+    code: '21',
+    name: '弥彦',
+    grade: 'G1',
+    timeSlot: 'デイ',
+    bankLength: '400m',
+    weather: '晴 / 気温 23℃ / 風速 1.3m',
+    totalRaces: 12,
+  },
+  {
+    id: 'kawasaki',
+    code: '34',
+    name: '川崎',
+    grade: 'F2',
+    timeSlot: 'ミッドナイト',
+    bankLength: '400m',
+    weather: '曇 / 気温 19℃ / 無風 (7車立)',
+    totalRaces: 9,
+  },
+  {
+    id: 'nara',
+    code: '53',
+    name: '奈良',
+    grade: 'F2',
+    timeSlot: 'ミッドナイト',
+    bankLength: '333m',
+    weather: '晴 / 気温 18℃ / 風速 0.5m (7車立)',
+    totalRaces: 9,
   },
   {
     id: 'maebashi',
@@ -99,6 +129,36 @@ export const ACTIVE_VENUES: LiveVenue[] = [
     bankLength: '400m (ドーム)',
     weather: '屋内 / 気温 23℃ / 無風 (7車立)',
     totalRaces: 9,
+  },
+  {
+    id: 'toyama',
+    code: '46',
+    name: '富山',
+    grade: 'F1',
+    timeSlot: 'デイ',
+    bankLength: '333m',
+    weather: '晴 / 気温 21℃ / 風速 0.9m',
+    totalRaces: 12,
+  },
+  {
+    id: 'sasebo',
+    code: '84',
+    name: '佐世保',
+    grade: 'F1',
+    timeSlot: 'モーニング',
+    bankLength: '400m',
+    weather: '晴 / 気温 20℃ / 風速 1.5m (7車立)',
+    totalRaces: 9,
+  },
+  {
+    id: 'gifu',
+    code: '43',
+    name: '岐阜',
+    grade: 'F1',
+    timeSlot: 'ナイター',
+    bankLength: '400m',
+    weather: '晴 / 気温 21℃ / 風速 0.7m',
+    totalRaces: 12,
   },
 ];
 
@@ -638,7 +698,7 @@ class CollectPyEngine {
 
       // Update deadline minutes
       const minLeft = Math.max(0, race.minutesToDeadline - 0.2);
-      let newStatus = race.status;
+      let newStatus: LiveRaceDetail['status'] = race.status;
 
       // Status state transition
       if (minLeft <= 0) {
@@ -676,7 +736,7 @@ class CollectPyEngine {
         lastUpdated: new Date().toLocaleTimeString(),
       };
 
-      if (newStatus === 'finished' && race.status !== 'finished') {
+      if (newStatus === 'finished') {
         newlyFinishedRace = updatedRaceObj;
       }
 

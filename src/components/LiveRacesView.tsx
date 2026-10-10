@@ -48,7 +48,13 @@ import {
   Bell,
   Sparkles,
   Zap,
+  Globe,
+  CalendarDays,
+  MapPin,
+  MinusCircle,
+  XCircle,
 } from 'lucide-react';
+import { executeOfficialAutoSync, fetchOfficialKaisaiSchedule } from '../services/officialFetcher';
 
 interface LiveRacesViewProps {
   model: TrainedModel;
@@ -95,7 +101,7 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
       level: 'INFO',
       action: 'collect.py 初期化',
       url: '/api/collector/v1/init',
-      statusText: 'バックグラウンドポーリング待機中 (3.0s礼儀間隔, robots.txt検証済, レース結果自動取得稼働)',
+      statusText: '自動取得停止中 (手動取得モード待機, robots.txt検証済, 3.0s礼儀間隔遵守)',
       robotsPassed: true,
       cacheHit: true,
       latencyMs: 12,
@@ -262,6 +268,65 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
     }
   };
 
+  // Full Official Automatic Sync across official sources
+  const handleOfficialFullSync = async () => {
+    setIsFetching(true);
+    try {
+      const res = await executeOfficialAutoSync('2026-10-10', selectedVenueCode);
+      setLiveRaces(res.liveRaces);
+      if (onUpdateLiveRaces) {
+        onUpdateLiveRaces(res.races);
+      }
+      setCollectorLogs((logs) => [
+        ...res.logs.map((l) => ({
+          id: l.id,
+          timestamp: l.timestamp,
+          level: l.type === 'SUCCESS' ? ('SUCCESS' as const) : l.type === 'WARN' ? ('WARN' as const) : ('INFO' as const),
+          action: l.title,
+          url: l.url,
+          statusText: l.detail,
+          robotsPassed: true,
+          cacheHit: false,
+          latencyMs: l.latencyMs,
+        })),
+        ...logs.slice(0, 16),
+      ]);
+      setLastFetchedAt(new Date().toLocaleTimeString());
+      setCountdownSeconds(config.intervalSeconds);
+    } catch (err) {
+      console.warn('Official sync error:', err);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Auto-fetch Kaisai meets and timetables
+  const handleFetchKaisaiMeets = async () => {
+    setIsFetching(true);
+    try {
+      const res = await fetchOfficialKaisaiSchedule('2026-10-10');
+      setCollectorLogs((logs) => [
+        ...res.logs.map((l) => ({
+          id: l.id,
+          timestamp: l.timestamp,
+          level: l.type === 'SUCCESS' ? ('SUCCESS' as const) : l.type === 'WARN' ? ('WARN' as const) : ('INFO' as const),
+          action: l.title,
+          url: l.url,
+          statusText: l.detail,
+          robotsPassed: true,
+          cacheHit: false,
+          latencyMs: l.latencyMs,
+        })),
+        ...logs.slice(0, 16),
+      ]);
+      setLastFetchedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.warn('Kaisai fetch error:', err);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
   // Explicitly batch fetch official results for all finished / past races
   const handleFetchAllResults = () => {
     setIsFetching(true);
@@ -323,8 +388,17 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
   }, [liveRaces, selectedVenueCode]);
 
   const selectedRace = useMemo(() => {
-    return liveRaces.find((r) => r.race_id === selectedRaceId) || venueRaces[0];
+    const found = liveRaces.find((r) => r.race_id === selectedRaceId);
+    if (found) return found;
+    return venueRaces[0] || liveRaces[0];
   }, [liveRaces, selectedRaceId, venueRaces]);
+
+  // Automatically keep selectedVenueCode in sync with selectedRace
+  useEffect(() => {
+    if (selectedRace && selectedRace.venueCode && selectedRace.venueCode !== selectedVenueCode) {
+      setSelectedVenueCode(selectedRace.venueCode);
+    }
+  }, [selectedRace?.venueCode, selectedVenueCode]);
 
   const currentVenue = useMemo(() => {
     return ACTIVE_VENUES.find((v) => v.code === selectedVenueCode) || ACTIVE_VENUES[0];
@@ -435,14 +509,20 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
                 />
               </span>
               <h2 className="text-sm font-bold text-slate-100">
-                本日開催中レース 自動取得センター (Live Active Races)
+                本日開催レース (Live Active Races)
               </h2>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 font-mono">
-                {config.enabled ? '自動取得稼働中' : '一時停止中'}
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                  config.enabled
+                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80'
+                    : 'bg-amber-950/80 text-amber-300 border-amber-800/80'
+                }`}
+              >
+                {config.enabled ? '自動取得稼働中' : '自動取得: OFF (手動取得モード)'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              全国の競輪場から当日の出走表・直前変動オッズ・確定結果を自動巡回取得し、AI期待値をリアルタイム算出。
+              全国の競輪場から当日の出走表・直前変動オッズ・確定結果を取得し、AI期待値をリアルタイム算出。(※自動取得OFF・手動更新モード)
             </p>
           </div>
 
@@ -454,11 +534,12 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
               className={`px-2.5 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
                 config.enabled
                   ? 'bg-slate-800 text-emerald-400 border-emerald-600/50'
-                  : 'bg-slate-950 text-slate-400 border-slate-800'
+                  : 'bg-slate-900 text-amber-300 border-amber-700/60 hover:bg-slate-800'
               }`}
+              title={config.enabled ? '自動取得を停止します' : '自動取得を再開します'}
             >
               {config.enabled ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{config.enabled ? '自動更新中' : '停止中'}</span>
+              <span>{config.enabled ? '自動更新中' : '自動取得OFF (手動)'}</span>
             </button>
 
             {/* Interval Selector */}
@@ -490,14 +571,36 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
               <span className="text-[11px] font-semibold text-slate-200">結果自動取得</span>
             </label>
 
-            {/* Manual Fetch Now Button */}
+            {/* Kaisai Meets Fetch Button */}
+            <button
+              onClick={handleFetchKaisaiMeets}
+              disabled={isFetching}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 border border-blue-500/80"
+              title="本日全国の開催競輪場と番組表日程を手動取得"
+            >
+              <CalendarDays className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span>開催データ手動取得</span>
+            </button>
+
+            {/* Official Source Sync Button */}
+            <button
+              onClick={handleOfficialFullSync}
+              disabled={isFetching}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 border border-emerald-500/80"
+              title="JKA公認 KEIRIN.JP / netkeirin から出走表・オッズ・確定結果を手動同期"
+            >
+              <Globe className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span>出走表・オッズ手動同期</span>
+            </button>
+
+            {/* Manual Refresh Button */}
             <button
               onClick={handleManualFetch}
               disabled={isFetching}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-700 disabled:opacity-50"
             >
               <RotateCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              <span>{isFetching ? '取得中...' : '最新更新'}</span>
+              <span>{isFetching ? '同期中...' : '手動更新'}</span>
             </button>
 
             {/* Batch Fetch All Results Button */}
@@ -505,10 +608,10 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
               onClick={handleFetchAllResults}
               disabled={isFetching}
               className="px-2.5 py-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
-              title="本日終了レースの公式着順・払戻金を一括取得"
+              title="本日終了レースの公式着順・払戻金を手動一括取得"
             >
               <Trophy className="w-3.5 h-3.5 text-amber-300" />
-              <span>確定結果一括取得</span>
+              <span>確定結果手動取得</span>
             </button>
 
             {/* Simulate Next Finished Race */}
@@ -532,9 +635,15 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
               <span>最終取得: <strong className="text-slate-100 font-mono">{lastFetchedAt}</strong></span>
             </span>
             <span>·</span>
-            <span className="font-mono">
-              次回自動更新まで: <strong className="text-emerald-400">{countdownSeconds}秒</strong>
-            </span>
+            {config.enabled ? (
+              <span className="font-mono">
+                次回自動更新まで: <strong className="text-emerald-400">{countdownSeconds}秒</strong>
+              </span>
+            ) : (
+              <span className="font-mono text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 text-[11px]">
+                自動取得: 停止中 (手動更新モード)
+              </span>
+            )}
             <span>·</span>
             <span>
               開催場: <strong className="text-slate-200">{ACTIVE_VENUES.length}場</strong> ({liveRaces.length}R中 <strong className="text-emerald-400">{liveRaces.filter(r => r.status === 'finished').length}R結果確定</strong>)
@@ -683,30 +792,42 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
                 onClick={() => handleSelectLiveRace(r.race_id)}
                 className={`p-2 rounded text-left transition-all border flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-slate-800 border-emerald-500 text-slate-100 shadow-sm'
+                    ? 'bg-emerald-950/70 border-emerald-500 text-slate-100 ring-1 ring-emerald-500/50 shadow-md'
                     : r.status === 'closing_soon'
-                    ? 'bg-amber-950/30 border-amber-500/60 text-amber-200 animate-pulse'
+                    ? 'bg-amber-950/40 border-amber-500/70 text-amber-200 animate-pulse'
+                    : r.status === 'racing'
+                    ? 'bg-cyan-950/30 border-cyan-500/60 text-cyan-200'
                     : r.status === 'finished'
-                    ? 'bg-slate-950 border-slate-800/80 text-slate-500'
+                    ? 'bg-slate-950/90 border-slate-800 text-slate-400 hover:bg-slate-900'
                     : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-xs">{r.raceNo}R</span>
-                  <span className="text-[10px] font-mono">{r.postTime}</span>
+                  <span className={`font-mono font-bold text-xs ${isSelected ? 'text-emerald-300' : ''}`}>
+                    {r.raceNo}R
+                  </span>
+                  <span className="text-[9px] font-mono text-slate-400" title={`発走予定: ${r.postTime}`}>
+                    {r.postTime}発走
+                  </span>
                 </div>
-                <div className="mt-1 text-[10px] truncate text-slate-400">
+                <div className="mt-1 text-[10px] truncate text-slate-300" title={r.raceTitle}>
                   {r.raceTitle}
                 </div>
-                <div className="mt-1.5 text-[9px] font-semibold">
+                <div className="mt-1.5 text-[9px] font-semibold flex items-center justify-between">
+                  <span className="text-amber-300 font-mono text-[10px]" title="締切予定時刻">
+                    {r.deadlineTime}締切
+                  </span>
                   {r.status === 'finished' ? (
-                    <span className="text-slate-500">確定済</span>
+                    <span className="text-slate-400 px-1 py-0.2 rounded bg-slate-900 border border-slate-800 text-[8px]">確定済</span>
                   ) : r.status === 'closing_soon' ? (
-                    <span className="text-amber-400 font-bold">締切直前</span>
+                    <span className="text-amber-400 font-bold px-1 py-0.2 rounded bg-amber-950/80 border border-amber-800 text-[8px] animate-pulse">締切直前</span>
                   ) : r.status === 'racing' ? (
-                    <span className="text-cyan-400">発走中</span>
+                    <span className="text-cyan-400 font-bold px-1 py-0.2 rounded bg-cyan-950/80 border border-cyan-800 text-[8px]">発走中</span>
                   ) : (
-                    <span className="text-slate-400">締切 {r.deadlineTime}</span>
+                    <span className="text-emerald-400 text-[8px]">発売中</span>
+                  )}
+                  {isSelected && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block ml-1" />
                   )}
                 </div>
               </button>
@@ -718,122 +839,366 @@ export const LiveRacesView: React.FC<LiveRacesViewProps> = ({
       {/* Selected Live Race Focus Section */}
       {selectedRace && livePredictions && (
         <div className="space-y-4">
-          {/* Race Line Diagram */}
-          <RaceLineDiagram entries={selectedRace.entries} />
+          {/* 1. Selected Race Comprehensive Details Card (選択したレースの詳細情報カード) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 sm:p-4 shadow-md space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-extrabold text-sm font-mono shadow-sm flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{selectedRace.venueName}競輪 {selectedRace.raceNo}R</span>
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-100">
+                    {selectedRace.raceTitle || '予選'}
+                  </h3>
+                </div>
 
-          {/* Live Race Real-Time AI Verdict Banner */}
-          <div
-            className={`border rounded-lg p-4 transition-all ${
-              livePredictions.isBuy
-                ? 'bg-emerald-950/40 border-emerald-600/70 text-emerald-100 shadow-lg shadow-emerald-950/20'
-                : 'bg-amber-950/30 border-amber-600/60 text-amber-100 shadow-lg shadow-amber-950/20'
-            }`}
-          >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                    livePredictions.isBuy ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                    selectedRace.grade === 'GP' || selectedRace.grade === 'G1'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : selectedRace.grade === 'G3'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
                   }`}
                 >
-                  {livePredictions.isBuy ? (
-                    <CheckCircle2 className="w-6 h-6" />
-                  ) : (
-                    <AlertTriangle className="w-6 h-6" />
-                  )}
-                </div>
+                  グレード: {selectedRace.grade}
+                </span>
 
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-wider font-semibold opacity-75">
-                      リアルタイムAI期待値判定
-                    </span>
-                    <span
-                      className={`text-lg font-bold px-2 py-0.5 rounded text-xs ${
-                        livePredictions.isBuy
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-amber-500/20 text-amber-300'
-                      }`}
-                    >
-                      {livePredictions.isBuy ? '【 買う (BUY) 】' : '【 見送り (SKIP) 】'}
-                    </span>
-                    <span className="text-xs text-slate-400 font-mono">
-                      (発走: {selectedRace.postTime} / 締切: {selectedRace.deadlineTime})
-                    </span>
-                  </div>
-                  <p className="text-xs mt-1 text-slate-300">
-                    {livePredictions.isBuy
-                      ? `直前変動オッズにおいて、期待値 EV ≧ ${activeStrategy.ev_threshold.toFixed(
-                          1
-                        )} を満たす上位 ${livePredictions.recommended.length} 点が検出されました。`
-                      : `直前オッズにおいて、期待値 EV ≧ ${activeStrategy.ev_threshold.toFixed(
-                          1
-                        )} を満たす買い目が存在しません。資金防衛のため見送りを推奨します。`}
-                  </p>
-                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 font-medium">
+                  {selectedRace.timeSlot}
+                </span>
+
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {selectedRace.entries[0]?.date || '2026-10-10'}
+                </span>
               </div>
 
-              {/* Action: Open in Detailed Predictor */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onSelectForPrediction(selectedRace.race_id)}
-                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              {/* Deadline & Post Time Badges (締切時刻 ＆ 発走時刻) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded bg-amber-950/80 border border-amber-600/70 text-amber-200 font-mono text-xs font-bold shadow-sm">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>〆切予定: <strong className="text-amber-300 text-sm">{selectedRace.deadlineTime}</strong></span>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 font-mono text-xs">
+                  <span>発走: <strong className="text-slate-100">{selectedRace.postTime}</strong></span>
+                </div>
+
+                <span
+                  className={`px-2.5 py-1 rounded text-xs font-bold border ${
+                    selectedRace.status === 'closing_soon'
+                      ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse'
+                      : selectedRace.status === 'finished'
+                      ? 'bg-slate-800 text-slate-300 border-slate-700'
+                      : selectedRace.status === 'racing'
+                      ? 'bg-cyan-950 text-cyan-300 border-cyan-800'
+                      : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                  }`}
                 >
-                  <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>予想ワークスペースで詳細分析</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                </button>
+                  {selectedRace.status === 'closing_soon'
+                    ? '締切直前 (発走待機中)'
+                    : selectedRace.status === 'finished'
+                    ? 'レース結果確定済'
+                    : selectedRace.status === 'racing'
+                    ? '発走中'
+                    : '投票受付中 (発売中)'}
+                </span>
               </div>
             </div>
 
-            {/* Recommended High-EV Bets Grid (if BUY) */}
-            {livePredictions.isBuy && (
-              <div className="mt-4 pt-3 border-t border-emerald-800/40">
-                <div className="text-xs font-semibold text-emerald-200 mb-2 flex items-center justify-between">
-                  <span>直前推奨買い目スリップ ({activeStrategy.bet_type.toUpperCase()} / 1点100円)</span>
-                  <span className="text-[11px] text-emerald-400 font-mono">
-                    購入点数: {livePredictions.recommended.length}点 ({livePredictions.recommended.length * 100}円)
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                  {livePredictions.recommended.map((bet, idx) => (
-                    <div
-                      key={bet.combo}
-                      className="bg-slate-900/90 border border-emerald-600/50 rounded p-2.5 flex flex-col justify-between"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono font-bold text-slate-100 bg-slate-800 px-1.5 py-0.5 rounded">
-                          #{idx + 1}
-                        </span>
-                        <span className="text-sm font-mono font-bold text-emerald-400 tracking-wider">
-                          {bet.combo}
-                        </span>
-                      </div>
-                      <div className="mt-2 space-y-1 text-[11px]">
-                        <div className="flex justify-between text-slate-400">
-                          <span>推定確率:</span>
-                          <span className="font-mono text-slate-200">
-                            {(bet.prob * 100).toFixed(2)}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>直前オッズ:</span>
-                          <span className="font-mono text-slate-100 font-bold">
-                            {bet.odds?.toFixed(1) || '-'}倍
-                          </span>
-                        </div>
-                        <div className="flex justify-between border-t border-slate-800 pt-1 text-emerald-300 font-semibold">
-                          <span>期待値 (EV):</span>
-                          <span className="font-mono font-bold text-emerald-400">
-                            {bet.ev?.toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
+            {/* Sub-info grid: Bank, Weather, Entries count, Odds count */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800/80">
+                <div className="text-[10px] text-slate-400">バンク周長・特徴</div>
+                <div className="font-semibold text-slate-200 mt-0.5">{currentVenue.bankLength} ({currentVenue.timeSlot})</div>
+              </div>
+              <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800/80">
+                <div className="text-[10px] text-slate-400">天候・コンディション</div>
+                <div className="font-semibold text-slate-200 mt-0.5">{selectedRace.result?.weather || currentVenue.weather}</div>
+              </div>
+              <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800/80">
+                <div className="text-[10px] text-slate-400">出走頭数</div>
+                <div className="font-semibold text-slate-200 mt-0.5 font-mono">{selectedRace.entries.length}車立</div>
+              </div>
+              <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800/80">
+                <div className="text-[10px] text-slate-400">リアルタイムオッズ件数</div>
+                <div className="font-semibold text-emerald-400 mt-0.5 font-mono">{selectedRace.odds.length}通り 登録済</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Line Formation Diagram */}
+          <RaceLineDiagram entries={selectedRace.entries} />
+
+          {/* 2. Confirmed Race Result & Hit/Miss Judgment (確定レースの場合に詳細結果を表示) */}
+          {selectedRace.status === 'finished' && selectedRace.result && raceResultEvaluation && (
+            <div
+              className={`border rounded-lg p-4 transition-all shadow-lg ${
+                raceResultEvaluation.isHit
+                  ? 'bg-emerald-950/40 border-emerald-500 shadow-emerald-950/40 text-emerald-100 ring-1 ring-emerald-500/50'
+                  : raceResultEvaluation.wasSkip
+                  ? 'bg-slate-900 border-slate-700 text-slate-200'
+                  : 'bg-rose-950/30 border-rose-600/70 shadow-rose-950/30 text-rose-100'
+              }`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${
+                      raceResultEvaluation.isHit
+                        ? 'bg-emerald-500 text-white shadow-md'
+                        : raceResultEvaluation.wasSkip
+                        ? 'bg-slate-700 text-slate-200'
+                        : 'bg-rose-600 text-white'
+                    }`}
+                  >
+                    {raceResultEvaluation.isHit ? (
+                      <Award className="w-7 h-7" />
+                    ) : raceResultEvaluation.wasSkip ? (
+                      <MinusCircle className="w-7 h-7 text-amber-400" />
+                    ) : (
+                      <XCircle className="w-7 h-7" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase tracking-wider font-semibold opacity-80">
+                        【{selectedRace.venueName} {selectedRace.raceNo}R 結果確定 ＆ 予想的中判断】
+                      </span>
+                      <span
+                        className={`text-sm font-bold px-2.5 py-0.5 rounded font-sans ${
+                          raceResultEvaluation.isHit
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : raceResultEvaluation.wasSkip
+                            ? 'bg-slate-800 text-amber-300 border border-slate-700'
+                            : 'bg-rose-600/30 text-rose-300 border border-rose-500/40'
+                        }`}
+                      >
+                        {raceResultEvaluation.isHit
+                          ? '🎯【 的中 (HIT) 】'
+                          : raceResultEvaluation.wasSkip
+                          ? '⏸【 見送り (SKIP - 資金防衛) 】'
+                          : '❌【 不的中 (MISS) 】'}
+                      </span>
                     </div>
-                  ))}
+                    <p className="text-xs mt-1 text-slate-300">
+                      {raceResultEvaluation.isHit
+                        ? `AI推奨買い目が見事的中！ 確定的中目「${raceResultEvaluation.winningCombo}」を捉え、払戻金 ${raceResultEvaluation.totalReturn.toLocaleString()}円 を獲得しました（純利益 ${raceResultEvaluation.netProfit > 0 ? '+' : ''}${raceResultEvaluation.netProfit.toLocaleString()}円、レース回収率 ${raceResultEvaluation.roi}%）。`
+                        : raceResultEvaluation.wasSkip
+                        ? `AI期待値判定により事前見送り（投資0円）。確定的中目は「${raceResultEvaluation.winningCombo}」（公式配当 ${(raceResultEvaluation.officialPayout || 0).toLocaleString()}円）でしたが、資金防衛に成功しました。`
+                        : `確定的中目は「${raceResultEvaluation.winningCombo}」（公式配当 ${(raceResultEvaluation.officialPayout || 0).toLocaleString()}円）でした。投資額 ${raceResultEvaluation.totalCost}円 に対し不的中（損益 -${raceResultEvaluation.totalCost}円）。`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick PnL Stats */}
+                <div className="flex items-center gap-2 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 text-xs font-mono">
+                  <div className="px-2 border-r border-slate-800 text-center">
+                    <div className="text-[10px] text-slate-400">投資金額</div>
+                    <div className="font-bold text-slate-200">{raceResultEvaluation.totalCost}円</div>
+                  </div>
+                  <div className="px-2 border-r border-slate-800 text-center">
+                    <div className="text-[10px] text-slate-400">払戻金</div>
+                    <div className="font-bold text-emerald-400">{raceResultEvaluation.totalReturn}円</div>
+                  </div>
+                  <div className="px-2 border-r border-slate-800 text-center">
+                    <div className="text-[10px] text-slate-400">純損益</div>
+                    <div className={`font-bold ${raceResultEvaluation.netProfit > 0 ? 'text-emerald-400' : raceResultEvaluation.netProfit < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {raceResultEvaluation.netProfit > 0 ? '+' : ''}{raceResultEvaluation.netProfit}円
+                    </div>
+                  </div>
+                  <div className="px-2 text-center">
+                    <div className="text-[10px] text-slate-400">回収率</div>
+                    <div className={`font-bold text-sm ${raceResultEvaluation.roi >= 100 ? 'text-emerald-400' : raceResultEvaluation.totalCost > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {raceResultEvaluation.totalCost > 0 ? `${raceResultEvaluation.roi}%` : '-'}
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
+
+              {/* Top 3 Finishers & Payouts mini table */}
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* 確定着順 (1-3着) */}
+                <div className="p-2.5 bg-slate-950/90 rounded border border-slate-800 space-y-1.5 font-sans">
+                  <div className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                    <span>上位入線結果 (確定着順)</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      締切: {selectedRace.deadlineTime} / 発走: {selectedRace.postTime}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-mono">
+                    <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-amber-500/40 text-amber-300 font-bold">
+                      <span>1着</span>
+                      <span className="text-base font-extrabold">{selectedRace.result.top3[0]}番</span>
+                    </div>
+                    <span className="text-slate-500">-</span>
+                    <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-blue-500/40 text-blue-300 font-bold">
+                      <span>2着</span>
+                      <span className="text-base font-extrabold">{selectedRace.result.top3[1]}番</span>
+                    </div>
+                    <span className="text-slate-500">-</span>
+                    <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-cyan-500/40 text-cyan-300 font-bold">
+                      <span>3着</span>
+                      <span className="text-base font-extrabold">{selectedRace.result.top3[2]}番</span>
+                    </div>
+                  </div>
+                  {selectedRace.result.kimarite1st && (
+                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/60 flex items-center gap-3">
+                      <span>1着決まり手: <strong className="text-amber-300">{selectedRace.result.kimarite1st}</strong></span>
+                      {selectedRace.result.kimarite2nd && (
+                        <span>2着: <strong className="text-slate-300">{selectedRace.result.kimarite2nd}</strong></span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 公式払戻金 */}
+                <div className="p-2.5 bg-slate-950/90 rounded border border-slate-800 space-y-1.5">
+                  <div className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                    <span>公式払戻金</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">
+                      的中目: {raceResultEvaluation.winningCombo}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+                    {selectedRace.result.payouts.slice(0, 4).map((p) => (
+                      <div
+                        key={`${p.bet_type}-${p.combo}`}
+                        className={`px-2 py-1 rounded border text-[11px] ${
+                          p.bet_type === activeStrategy.bet_type
+                            ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200 font-bold'
+                            : 'bg-slate-900 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <span className="text-slate-400 mr-1 uppercase">{p.bet_type}:</span>
+                        <span>{p.combo}</span>
+                        <span className="ml-1 text-slate-100 font-semibold">{p.payout.toLocaleString()}円</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Live Race Real-Time AI Verdict Banner (未確定または発走前レースの場合) */}
+          {selectedRace.status !== 'finished' && (
+            <div
+              className={`border rounded-lg p-4 transition-all ${
+                livePredictions.isBuy
+                  ? 'bg-emerald-950/40 border-emerald-600/70 text-emerald-100 shadow-lg shadow-emerald-950/20'
+                  : 'bg-amber-950/30 border-amber-600/60 text-amber-100 shadow-lg shadow-amber-950/20'
+              }`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                      livePredictions.isBuy ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                    }`}
+                  >
+                    {livePredictions.isBuy ? (
+                      <CheckCircle2 className="w-6 h-6" />
+                    ) : (
+                      <AlertTriangle className="w-6 h-6" />
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase tracking-wider font-semibold opacity-75">
+                        リアルタイムAI期待値判定
+                      </span>
+                      <span
+                        className={`text-lg font-bold px-2 py-0.5 rounded text-xs ${
+                          livePredictions.isBuy
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-amber-500/20 text-amber-300'
+                        }`}
+                      >
+                        {livePredictions.isBuy ? '【 買う (BUY) 】' : '【 見送り (SKIP) 】'}
+                      </span>
+                      <span className="text-xs text-slate-300 font-mono flex items-center gap-1 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>発走: {selectedRace.postTime} / 〆切: <strong>{selectedRace.deadlineTime}</strong></span>
+                      </span>
+                    </div>
+                    <p className="text-xs mt-1 text-slate-300">
+                      {livePredictions.isBuy
+                        ? `直前変動オッズにおいて、期待値 EV ≧ ${activeStrategy.ev_threshold.toFixed(
+                            1
+                          )} を満たす上位 ${livePredictions.recommended.length} 点が検出されました。`
+                        : `直前オッズにおいて、期待値 EV ≧ ${activeStrategy.ev_threshold.toFixed(
+                            1
+                          )} を満たす買い目が存在しません。資金防衛のため見送りを推奨します。`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Action: Open in Detailed Predictor */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onSelectForPrediction(selectedRace.race_id)}
+                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shadow-sm"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>予想ワークスペースで詳細分析</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Recommended High-EV Bets Grid (if BUY) */}
+              {livePredictions.isBuy && (
+                <div className="mt-4 pt-3 border-t border-emerald-800/40">
+                  <div className="text-xs font-semibold text-emerald-200 mb-2 flex items-center justify-between">
+                    <span>直前推奨買い目スリップ ({activeStrategy.bet_type.toUpperCase()} / 1点100円)</span>
+                    <span className="text-[11px] text-emerald-400 font-mono">
+                      購入点数: {livePredictions.recommended.length}点 ({livePredictions.recommended.length * 100}円)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                    {livePredictions.recommended.map((bet, idx) => (
+                      <div
+                        key={bet.combo}
+                        className="bg-slate-900/90 border border-emerald-600/50 rounded p-2.5 flex flex-col justify-between"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-mono font-bold text-slate-100 bg-slate-800 px-1.5 py-0.5 rounded">
+                            #{idx + 1}
+                          </span>
+                          <span className="text-sm font-mono font-bold text-emerald-400 tracking-wider">
+                            {bet.combo}
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-1 text-[11px]">
+                          <div className="flex justify-between text-slate-400">
+                            <span>推定確率:</span>
+                            <span className="font-mono text-slate-200">
+                              {(bet.prob * 100).toFixed(2)}%
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>直前オッズ:</span>
+                            <span className="font-mono text-slate-100 font-bold">
+                              {bet.odds?.toFixed(1) || '-'}倍
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-800 pt-1 text-emerald-300 font-semibold">
+                            <span>期待値 (EV):</span>
+                            <span className="font-mono font-bold text-emerald-400">
+                              {bet.ev?.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           </div>
 
           {/* Live Rider Table */}

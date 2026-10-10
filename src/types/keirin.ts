@@ -79,6 +79,49 @@ export interface RaceGroup {
   result?: RaceResult;
 }
 
+/** 開催レース概要情報 (番組表) */
+export interface KaisaiRaceOverview {
+  race_no: number;
+  race_id: string;
+  race_name: string; // 例: "Ａ級 準決勝", "Ｓ級 決勝", "Ｌ級 ガールズ予選"
+  post_time: string; // 例: "23:20"
+  deadline_time: string; // 例: "23:15"
+  distance?: number; // 例: 2025 (メートル)
+  car_count: number; // 7 または 9
+  status: 'scheduled' | 'closing_soon' | 'racing' | 'finished';
+  hasOdds?: boolean;
+  hasResult?: boolean;
+}
+
+/** 開催場データ (全国の競輪場ごとの開催情報) */
+export interface KaisaiMeet {
+  meet_id: string; // 例: "2026101034"
+  date: string; // "YYYY-MM-DD"
+  venue_code: string; // 例: "34"
+  venue_name: string; // 例: "川崎"
+  grade: KeirinGrade; // "GP" | "G1" | "G2" | "G3" | "F1" | "F2"
+  time_slot: 'モーニング' | 'デイ' | 'ナイター' | 'ミッドナイト';
+  day_title?: string; // 例: "初日", "2日目", "準決勝", "最終日"
+  meet_title: string; // 例: "開設74周年記念 (G3)", "日刊スポーツ杯 (F1)"
+  bank_length: string; // "333m" | "400m" | "500m"
+  bank_feature?: string; // 例: "直線58.0m, カント32°15′"
+  weather?: string; // 例: "晴 / 気温 22℃ / 風速 1.2m"
+  race_count: number; // 9 または 12
+  status: 'holding' | 'selling' | 'finished' | 'scheduled';
+  races: KaisaiRaceOverview[];
+}
+
+/** 開催日別スケジュール集計 */
+export interface KaisaiScheduleDay {
+  date: string;
+  meets: KaisaiMeet[];
+  totalMeets: number;
+  totalRaces: number;
+  fetchedAt: string;
+  source: string;
+}
+
+
 export interface FeatureRow {
   race_id: string;
   car_no: number;
@@ -182,4 +225,79 @@ export interface RacePredictionResult {
   verdict_reason: string;
   recommended_bets: CombinationProb[];
   strategy_used: StrategyParams;
+}
+
+/** 予想結果の的中・不的中判定ステータス */
+export type HitMissStatus = 'hit' | 'miss' | 'skip' | 'pending';
+
+/** 推奨買い目の的中・払戻評価情報 */
+export interface EvaluatedBetItem {
+  combo: string;
+  prob: number;
+  odds: number;
+  ev: number;
+  isHit?: boolean;
+  payout?: number; // 100円あたりの払戻金
+  returnAmount?: number; // 購入金額に応じた払戻額
+}
+
+/** 単一レースの予想結果的中・不的中および損益評価 */
+export interface RacePredictionEvaluation {
+  race_id: string;
+  date: string;
+  venue: string;
+  race_no: number;
+  grade: KeirinGrade;
+  raceTitle?: string;
+  status: 'scheduled' | 'closing_soon' | 'racing' | 'finished';
+  verdict: 'BUY' | 'SKIP';
+  verdictReason: string;
+  bets: EvaluatedBetItem[];
+  totalBets: number;
+  betCost: number; // 投資額 (円)
+  totalReturn: number; // 払戻額 (円)
+  profit: number; // 損益 (円)
+  recoveryRate: number; // 回収率 (%)
+  hitStatus: HitMissStatus; // 'hit': 的中, 'miss': 不的中, 'skip': 見送り, 'pending': 未確定
+  winningCombo?: string; // 実際の的中目
+  top3?: [number, number, number]; // 確定着順 (1着-2着-3着)
+  officialPayout?: number; // 公式払戻金
+}
+
+/** 開催地（競輪場）ごとの的中率・回収率・損益集計 */
+export interface VenueEvaluationStat {
+  venue: string;
+  venueCode?: string;
+  bankLength?: string;
+  totalRaces: number;
+  finishedRaces: number;
+  boughtRaces: number;
+  skippedRaces: number;
+  hitRaces: number;
+  missRaces: number;
+  totalBets: number;
+  totalCost: number; // 総投資額 (円)
+  totalReturn: number; // 総払戻額 (円)
+  netProfit: number; // 損益 (円)
+  hitRate: number; // 的中率 (%)
+  recoveryRate: number; // 回収率 (%)
+}
+
+/** 全レース総合評価サマリー */
+export interface DatasetEvaluationSummary {
+  totalRaces: number;
+  finishedRaces: number;
+  boughtRaces: number;
+  skippedRaces: number;
+  pendingRaces: number;
+  hitRaces: number;
+  missRaces: number;
+  totalBets: number;
+  totalCost: number; // 総投資額 (円)
+  totalReturn: number; // 総払戻額 (円)
+  netProfit: number; // 損益 (円)
+  hitRate: number; // 的中率 (%)
+  recoveryRate: number; // 回収率 (%)
+  venueStats: VenueEvaluationStat[];
+  evaluations: RacePredictionEvaluation[];
 }
